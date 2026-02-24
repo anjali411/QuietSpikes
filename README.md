@@ -15,18 +15,6 @@ python3 -m http.server 4173
 
 Then open <http://localhost:4173>.
 
-## Deploy on GitHub Pages
-
-This project is intentionally a plain static site (`index.html`) with no build step, so it works directly with GitHub Pages.
-
-1. Push this repository to GitHub.
-2. Go to **Settings → Pages**.
-3. Under **Build and deployment**, choose **Deploy from a branch**.
-4. Select your publishing branch (usually `main`) and the `/ (root)` folder.
-5. Save and wait for deployment.
-
-The repo includes a `.nojekyll` file to ensure Pages serves files as-is.
-
 ## Model notes
 
 This app uses a simplified educational model, not a medical device model:
