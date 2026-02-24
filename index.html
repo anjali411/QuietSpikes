@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daily Blood Sugar Approximation Tool</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --good: #15803d;
+      --warn: #d97706;
+      --bad: #b91c1c;
+      --line: #d1d5db;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 24px auto;
+      padding: 0 16px 32px;
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 1px 2px rgb(15 23 42 / 8%), 0 8px 20px rgb(15 23 42 / 5%);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.35rem;
+    }
+
+    p.sub {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    input, select, button {
+      font-size: 0.92rem;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .meal-list {
+      margin-top: 8px;
+      max-height: 250px;
+      overflow: auto;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .meal-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 0.9rem;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .row button { flex: 1; min-width: 120px; }
+
+    .legend { display: flex; gap: 14px; font-size: 0.83rem; color: var(--muted); margin: 8px 0; }
+
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .metric {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 1.1rem;
+    }
+
+    .tips li { margin-bottom: 8px; }
+    .disclaimer { color: var(--muted); font-size: 0.85rem; margin-top: 12px; }
+
+    @media (max-width: 920px) {
+      .container { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <h1>Meal/Event Input</h1>
+      <p class="sub">Add what and when you ate/drank. Meal order affects predicted spikes.</p>
+
+      <form id="meal-form">
+        <div class="grid-2">
+          <label>
+            Time
+            <input type="time" id="time" required value="08:00" />
+          </label>
+          <label>
+            Meal label
+            <input type="text" id="label" placeholder="Breakfast" value="Breakfast" />
+          </label>
+        </div>
+
+        <div class="grid-2">
+          <label>Carbs (g)
+            <input type="number" id="carbs" min="0" value="45" required />
+          </label>
+          <label>Sugary drinks/snacks (g sugar)
+            <input type="number" id="drinkSugar" min="0" value="0" required />
+          </label>
+        </div>
+
+        <div class="grid-2">
+          <label>Protein (g)
+            <input type="number" id="protein" min="0" value="20" required />
+          </label>
+          <label>Fat (g)
+            <input type="number" id="fat" min="0" value="12" required />
+          </label>
+        </div>
+
+        <div class="grid-2">
+          <label>Fiber (g)
+            <input type="number" id="fiber" min="0" value="8" required />
+          </label>
+          <label>Glycemic index
+            <select id="gi">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+        </div>
+
+        <label>Order eaten
+          <select id="order">
+            <option value="veg-protein-first">Vegetables/Protein first, carbs last</option>
+            <option value="mixed" selected>Mixed order</option>
+            <option value="carbs-first">Carbs first</option>
+          </select>
+        </label>
+
+        <div class="row">
+          <button type="submit">Add event</button>
+          <button type="button" class="secondary" id="clear">Clear day</button>
+        </div>
+      </form>
+
+      <div class="meal-list" id="meal-list"></div>
+    </section>
+
+    <section class="card">
+      <h1>Estimated Glucose Curve</h1>
+      <p class="sub">Approximate model only. Not medical advice.</p>
+
+      <svg id="chart" viewBox="0 0 900 320" width="100%" aria-label="Estimated blood sugar graph"></svg>
+      <div class="legend">
+        <span><i class="dot" style="background:#2563eb"></i>Estimated glucose</span>
+        <span><i class="dot" style="background:#fbbf24"></i>140 mg/dL threshold</span>
+        <span><i class="dot" style="background:#ef4444"></i>180 mg/dL threshold</span>
+      </div>
+
+      <div class="metrics" id="metrics"></div>
+
+      <h2>Consequences & Recommendations</h2>
+      <ul class="tips" id="tips"></ul>
+
+      <p class="disclaimer">
+        This is a rough educational estimate based on meal composition, timing, and order. It does not diagnose, treat, or replace CGM/lab measurements.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const meals = [];
+
+    const GI_FACTOR = { low: 0.8, medium: 1.0, high: 1.2 };
+    const ORDER_FACTOR = { 'veg-protein-first': 0.75, mixed: 1.0, 'carbs-first': 1.25 };
+    const PEAK_MINUTES = { 'veg-protein-first': 55, mixed: 45, 'carbs-first': 35 };
+
+    const form = document.getElementById('meal-form');
+    const mealList = document.getElementById('meal-list');
+    const chart = document.getElementById('chart');
+    const metricsEl = document.getElementById('metrics');
+    const tipsEl = document.getElementById('tips');
+
+    function toMinutes(hhmm) {
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + m;
+    }
+
+    function glucoseImpactAtMinute(meal, minute) {
+      const t = minute - meal.timeMin;
+      if (t < 0 || t > 300) return 0;
+
+      const netCarbs = Math.max(0, meal.carbs + meal.drinkSugar - 0.4 * meal.fiber);
+      const damping = Math.max(0.65, 1 - (meal.protein * 0.01 + meal.fat * 0.008 + meal.fiber * 0.015));
+      const rise = netCarbs * 2.2 * GI_FACTOR[meal.gi] * ORDER_FACTOR[meal.order] * damping;
+      const peak = PEAK_MINUTES[meal.order];
+
+      if (t <= peak) {
+        return rise * Math.pow(t / peak, 1.7);
+      }
+
+      const decayWindow = 220;
+      const down = Math.exp(-(t - peak) / decayWindow);
+      return rise * down;
+    }
+
+    function simulateDay() {
+      const baseline = 90;
+      const values = [];
+      for (let minute = 0; minute < 1440; minute++) {
+        let glucose = baseline;
+        for (const meal of meals) glucose += glucoseImpactAtMinute(meal, minute);
+        const circadian = 3 * Math.sin((2 * Math.PI * (minute - 300)) / 1440);
+        values.push(Math.max(70, glucose + circadian));
+      }
+      return values;
+    }
+
+    function fmtTime(minute) {
+      const h = Math.floor(minute / 60).toString().padStart(2, '0');
+      const m = (minute % 60).toString().padStart(2, '0');
+      return `${h}:${m}`;
+    }
+
+    function renderChart(values) {
+      const width = 900, height = 320;
+      const pad = { top: 12, right: 20, bottom: 28, left: 50 };
+      const plotW = width - pad.left - pad.right;
+      const plotH = height - pad.top - pad.bottom;
+
+      const minY = 60, maxY = Math.max(220, Math.ceil(Math.max(...values) / 10) * 10);
+      const x = i => pad.left + (i / (values.length - 1)) * plotW;
+      const y = v => pad.top + (1 - (v - minY) / (maxY - minY)) * plotH;
+
+      let path = '';
+      for (let i = 0; i < values.length; i += 4) {
+        path += `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(2)} ${y(values[i]).toFixed(2)} `;
+      }
+
+      const y140 = y(140), y180 = y(180);
+      const ticks = [0, 360, 720, 1080, 1439].map(t =>
+        `<text x="${x(t)}" y="${height - 8}" text-anchor="middle" font-size="11" fill="#6b7280">${fmtTime(t)}</text>`
+      ).join('');
+
+      chart.innerHTML = `
+        <rect x="0" y="0" width="${width}" height="${height}" fill="#fff" rx="10" />
+        <line x1="${pad.left}" x2="${width - pad.right}" y1="${y140}" y2="${y140}" stroke="#fbbf24" stroke-dasharray="5 4" />
+        <line x1="${pad.left}" x2="${width - pad.right}" y1="${y180}" y2="${y180}" stroke="#ef4444" stroke-dasharray="5 4" />
+        <text x="${pad.left + 4}" y="${y140 - 5}" font-size="11" fill="#b45309">140</text>
+        <text x="${pad.left + 4}" y="${y180 - 5}" font-size="11" fill="#b91c1c">180</text>
+        <path d="${path}" stroke="#2563eb" stroke-width="2.8" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+        ${ticks}
+      `;
+    }
+
+    function summarize(values) {
+      const max = Math.max(...values);
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      const std = Math.sqrt(values.reduce((sum, v) => sum + (v - avg) ** 2, 0) / values.length);
+      const minsAbove140 = values.filter(v => v > 140).length;
+      const minsAbove180 = values.filter(v => v > 180).length;
+
+      metricsEl.innerHTML = `
+        <div class="metric"><small>Peak</small><strong>${max.toFixed(0)}</strong><small>mg/dL</small></div>
+        <div class="metric"><small>Avg</small><strong>${avg.toFixed(0)}</strong><small>mg/dL</small></div>
+        <div class="metric"><small>Time >140</small><strong>${minsAbove140}</strong><small>minutes</small></div>
+        <div class="metric"><small>Variability</small><strong>${std.toFixed(1)}</strong><small>SD</small></div>
+      `;
+
+      const tips = [];
+      if (max > 180) {
+        tips.push('Large spike risk: repeated peaks above 180 mg/dL may increase oxidative stress and long-term cardiometabolic risk.');
+        tips.push('Try reducing rapid carbs or splitting large carb meals into smaller portions.');
+      } else if (max > 140) {
+        tips.push('Moderate post-meal spike detected. Consider a 10–15 minute walk after meals to improve glucose disposal.');
+      } else {
+        tips.push('Your estimated spikes are relatively controlled today. Keep meals balanced and timed consistently.');
+      }
+
+      if (minsAbove140 > 120) {
+        tips.push('Extended time above 140 mg/dL suggests high glycemic load for your day. Increase fiber/protein and lower refined carbs.');
+      }
+
+      const carbFirstMeals = meals.filter(m => m.order === 'carbs-first').length;
+      if (carbFirstMeals > 0) {
+        tips.push('Meal order matters: eating vegetables/protein first can reduce early glucose rise versus carbs-first patterns.');
+      }
+
+      if (meals.some(m => m.drinkSugar >= 20)) {
+        tips.push('Sugary drinks can create fast spikes. Swap with water/unsweetened drinks or consume with protein/fiber.');
+      }
+
+      if (std > 22) {
+        tips.push('High day-to-day variability estimate. More consistent meal timing and carb distribution can smooth the curve.');
+      }
+
+      tipsEl.innerHTML = tips.map(t => `<li>${t}</li>`).join('');
+    }
+
+    function renderMeals() {
+      if (!meals.length) {
+        mealList.innerHTML = '<p class="sub">No events yet. Add your first meal/snack.</p>';
+        return;
+      }
+      mealList.innerHTML = meals
+        .sort((a, b) => a.timeMin - b.timeMin)
+        .map((m, idx) => `<div class="meal-item"><strong>${idx + 1}. ${m.label || 'Meal'} (${m.time})</strong><br/>${m.carbs}g carbs, ${m.drinkSugar}g sugar drink, ${m.protein}g protein, ${m.fat}g fat, ${m.fiber}g fiber · ${m.gi} GI · ${m.order}</div>`)
+        .join('');
+    }
+
+    function recompute() {
+      const values = simulateDay();
+      renderChart(values);
+      summarize(values);
+      renderMeals();
+    }
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const meal = {
+        time: document.getElementById('time').value,
+        timeMin: toMinutes(document.getElementById('time').value),
+        label: document.getElementById('label').value,
+        carbs: Number(document.getElementById('carbs').value || 0),
+        drinkSugar: Number(document.getElementById('drinkSugar').value || 0),
+        protein: Number(document.getElementById('protein').value || 0),
+        fat: Number(document.getElementById('fat').value || 0),
+        fiber: Number(document.getElementById('fiber').value || 0),
+        gi: document.getElementById('gi').value,
+        order: document.getElementById('order').value
+      };
+
+      meals.push(meal);
+      recompute();
+      form.reset();
+      document.getElementById('time').value = '12:00';
+      document.getElementById('label').value = 'Meal';
+      document.getElementById('gi').value = 'medium';
+      document.getElementById('order').value = 'mixed';
+    });
+
+    document.getElementById('clear').addEventListener('click', () => {
+      meals.splice(0, meals.length);
+      recompute();
+    });
+
+    recompute();
+  </script>
+</body>
+</html>
