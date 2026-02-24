@@ -136,6 +136,32 @@
     .tips li { margin-bottom: 8px; }
     .disclaimer { color: var(--muted); font-size: 0.85rem; margin-top: 12px; }
 
+    .chatgpt-box {
+      margin-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 12px;
+    }
+
+    textarea {
+      font-size: 0.92rem;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 70px;
+      resize: vertical;
+      font-family: inherit;
+    }
+
+    .status {
+      font-size: 0.82rem;
+      margin-top: 6px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+
+    .status.error { color: var(--bad); }
+    .status.ok { color: var(--good); }
+
     @media (max-width: 920px) {
       .container { grid-template-columns: 1fr; }
     }
@@ -198,10 +224,28 @@
           </select>
         </label>
 
+      <div class="row">
+        <button type="submit">Add event</button>
+        <button type="button" class="secondary" id="clear">Clear day</button>
+      </div>
+
+      <div class="chatgpt-box">
+        <h2>ChatGPT Macro Assistant</h2>
+        <p class="sub">Paste a meal description and let ChatGPT estimate carbs, protein, fat, and fiber for this form.</p>
+
+        <label>OpenAI API key (stored only in your browser)
+          <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" />
+        </label>
+
+        <label>Meal text for ChatGPT
+          <textarea id="mealPrompt" placeholder="Example: 2 scrambled eggs, 2 slices whole wheat toast, 1 tbsp butter, and a banana"></textarea>
+        </label>
+
         <div class="row">
-          <button type="submit">Add event</button>
-          <button type="button" class="secondary" id="clear">Clear day</button>
+          <button type="button" id="calcMacros">Estimate macros with ChatGPT</button>
         </div>
+        <p id="chatgptStatus" class="status"></p>
+      </div>
       </form>
 
       <div class="meal-list" id="meal-list"></div>
@@ -241,6 +285,15 @@
     const chart = document.getElementById('chart');
     const metricsEl = document.getElementById('metrics');
     const tipsEl = document.getElementById('tips');
+    const openaiKeyEl = document.getElementById('openaiKey');
+    const mealPromptEl = document.getElementById('mealPrompt');
+    const chatgptStatusEl = document.getElementById('chatgptStatus');
+
+    const SAVED_KEY = 'openai_api_key';
+    openaiKeyEl.value = localStorage.getItem(SAVED_KEY) || '';
+    openaiKeyEl.addEventListener('change', () => {
+      localStorage.setItem(SAVED_KEY, openaiKeyEl.value.trim());
+    });
 
     function toMinutes(hhmm) {
       const [h, m] = hhmm.split(':').map(Number);
@@ -376,6 +429,91 @@
       renderMeals();
     }
 
+    function setStatus(message, type = '') {
+      chatgptStatusEl.textContent = message;
+      chatgptStatusEl.className = `status ${type}`.trim();
+    }
+
+    async function estimateMacrosWithChatGPT() {
+      const apiKey = openaiKeyEl.value.trim();
+      const mealText = mealPromptEl.value.trim();
+
+      if (!apiKey) {
+        setStatus('Please provide an OpenAI API key.', 'error');
+        return;
+      }
+
+      if (!mealText) {
+        setStatus('Please provide a meal description first.', 'error');
+        return;
+      }
+
+      setStatus('Estimating macros with ChatGPT...');
+
+      try {
+        const response = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4.1-mini',
+            input: [
+              {
+                role: 'system',
+                content: 'You are a nutrition assistant. Estimate meal macros and respond with JSON only using keys label, carbs, protein, fat, fiber, drinkSugar. Values must be numbers except label.'
+              },
+              {
+                role: 'user',
+                content: mealText
+              }
+            ],
+            text: {
+              format: {
+                type: 'json_schema',
+                name: 'meal_macros',
+                strict: true,
+                schema: {
+                  type: 'object',
+                  properties: {
+                    label: { type: 'string' },
+                    carbs: { type: 'number' },
+                    protein: { type: 'number' },
+                    fat: { type: 'number' },
+                    fiber: { type: 'number' },
+                    drinkSugar: { type: 'number' }
+                  },
+                  required: ['label', 'carbs', 'protein', 'fat', 'fiber', 'drinkSugar'],
+                  additionalProperties: false
+                }
+              }
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`OpenAI error ${response.status}: ${errText.slice(0, 180)}`);
+        }
+
+        const data = await response.json();
+        const outputText = data.output_text || (data.output && data.output[0] && data.output[0].content && data.output[0].content[0] && data.output[0].content[0].text) || '';
+        const parsed = JSON.parse(outputText);
+
+        document.getElementById('label').value = parsed.label || 'Meal';
+        document.getElementById('carbs').value = Math.max(0, Math.round(parsed.carbs || 0));
+        document.getElementById('protein').value = Math.max(0, Math.round(parsed.protein || 0));
+        document.getElementById('fat').value = Math.max(0, Math.round(parsed.fat || 0));
+        document.getElementById('fiber').value = Math.max(0, Math.round(parsed.fiber || 0));
+        document.getElementById('drinkSugar').value = Math.max(0, Math.round(parsed.drinkSugar || 0));
+
+        setStatus('Macros estimated. Review and click “Add event” to add this meal.', 'ok');
+      } catch (error) {
+        setStatus(`Could not estimate macros: ${error.message}`, 'error');
+      }
+    }
+
     form.addEventListener('submit', e => {
       e.preventDefault();
       const meal = {
@@ -404,6 +542,8 @@
       meals.splice(0, meals.length);
       recompute();
     });
+
+    document.getElementById('calcMacros').addEventListener('click', estimateMacrosWithChatGPT);
 
     recompute();
   </script>
